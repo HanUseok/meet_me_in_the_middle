@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>meet_me_in_the_middle · MVP</title>
+  <style>
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
+    #map{position:fixed;inset:0;z-index:0}
+    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:16px 16px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.08);padding:12px}
+    .row{display:flex;gap:8px;align-items:center;margin:6px 0}
+    input,select,button{padding:12px;border-radius:12px;border:1px solid #ddd;font-size:15px}
+    button{background:#111;color:#fff;border:0}
+    .tab{padding:8px 12px;border:1px solid #ddd;border-radius:999px;background:#fff}
+    .tab.on{background:#111;color:#fff;border-color:#111}
+    .card{border:1px solid #eee;border-radius:12px;padding:10px;margin:6px 0}
+    .badge{display:inline-block;background:#f5f5f5;border-radius:8px;padding:2px 8px;margin-right:6px;font-size:12px}
+    .status{font-size:12px;color:#666;min-height:18px}
+    .btn-location{background:#666;padding:10px 12px;font-size:14px}
+    .btn-location:hover{background:#333}
+  </style>
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=d1edc654e39b717ae9109665b63453f6&libraries=services&autoload=false"></script>
+</head>
+<body>
+  <div id="map"></div>
+
+  <div class="sheet">
+    <!-- 참여자 입력 -->
+    <div class="row"><input id="p1" placeholder="본인 위치" /><button class="btn-location">내 위치</button></div>
+    <div class="row"><input id="p2" placeholder="참여자2 장소 (예: 홍대입구역)" /></div>
+    <!-- 검색 파라미터 -->
+    <div class="row">
+      <button id="btnCenter">중간지점→지역 Top3</button>
+    </div>
+    <!-- 탭 -->
+    <div class="row" id="tabs" style="gap:6px">
+      <button class="tab on" data-cat="all">전체</button>
+      <button class="tab" data-cat="food">맛집</button>
+      <button class="tab" data-cat="pub">술집</button>
+      <button class="tab" data-cat="cafe">카페</button>
+      <button class="tab" data-cat="play">놀거리</button>
+    </div>
+    <div class="status" id="status">준비됨</div>
+    <div id="results"></div>
+  </div>
+
+  <!-- 모듈 스크립트 -->
+  <script type="module">
+    import { initApp } from './session-ui/app.js';
+    kakao.maps.load(() => initApp());
+  </script>
+</body>
+</html>

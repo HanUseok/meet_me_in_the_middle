@@ -1,9 +1,3 @@
- (cd "$(git rev-parse --show-toplevel)" && git apply --3way <<'EOF' 
-diff --git a/README.md b/README.md
-index d8fd457e2d9e92d8ecf8309ad6aa70ffd468e447..1c30c432f15c97be35b244b92cf18f3f1876f316 100644
---- a/README.md
-+++ b/README.md
-@@ -1,13 +1,29 @@
  # meet_me_in_the_middle (MVP)
  브라우저에서 바로 동작하는 중간지점 Top3 추천 데모.
  

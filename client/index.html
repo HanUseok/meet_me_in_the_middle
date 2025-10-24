@@ -5,43 +5,96 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>meet_me_in_the_middle · MVP</title>
   <style>
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
+    :root{color-scheme:light dark}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:#f5f7fb}
     #map{position:fixed;inset:0;z-index:0}
-    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:16px 16px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.08);padding:12px}
-    .row{display:flex;gap:8px;align-items:center;margin:6px 0}
-    input,select,button{padding:12px;border-radius:12px;border:1px solid #ddd;font-size:15px}
-    button{background:#111;color:#fff;border:0}
-    .tab{padding:8px 12px;border:1px solid #ddd;border-radius:999px;background:#fff}
+    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease}
+    .sheet.collapsed{transform:translateY(calc(100% - 64px))}
+    .sheet.open{transform:translateY(0)}
+    .sheet.dragging{transition:none}
+    .sheet-header{padding:12px 20px 8px;display:flex;flex-direction:column;gap:10px;cursor:grab;-webkit-user-select:none;user-select:none}
+    .sheet-header:active{cursor:grabbing}
+    .sheet-handle{width:48px;height:4px;border-radius:999px;background:#d0d4dc;margin:0 auto}
+    .sheet-header-bar{display:flex;align-items:center;justify-content:space-between;gap:12px}
+    .sheet-title{font-size:15px;font-weight:600;color:#1a1e27}
+    .sheet-toggle{padding:6px 14px;border-radius:999px;border:1px solid #d0d4dc;background:#fff;color:#1a1e27;font-size:12px;font-weight:600}
+    .sheet-body{padding:0 20px 20px;overflow-y:auto}
+    .row{display:flex;gap:8px;align-items:center;margin:10px 0}
+    input,select,button{padding:12px;border-radius:12px;border:1px solid #d8dce6;font-size:15px;background:#fff;color:#1a1e27}
+    button{cursor:pointer}
+    .btn-primary{background:#111;color:#fff;border-color:#111}
+    .btn-location{background:#4c5468;color:#fff;border:0;padding:10px 12px;font-size:14px}
+    .btn-location:hover{background:#2f3443}
+    .tab{padding:8px 12px;border:1px solid #d8dce6;border-radius:999px;background:#fff;color:#1a1e27;font-weight:600}
     .tab.on{background:#111;color:#fff;border-color:#111}
-    .card{border:1px solid #eee;border-radius:12px;padding:10px;margin:6px 0}
-    .badge{display:inline-block;background:#f5f5f5;border-radius:8px;padding:2px 8px;margin-right:6px;font-size:12px}
-    .status{font-size:12px;color:#666;min-height:18px}
-    .btn-location{background:#666;padding:10px 12px;font-size:14px}
-    .btn-location:hover{background:#333}
+    .card{border:1px solid #e6e9f1;border-radius:16px;padding:14px;margin:10px 0;background:#fff;color:#1a1e27;box-shadow:0 4px 12px rgba(17,23,34,.06)}
+    .card-hint{background:#f6f8ff;border-color:#d6dcff;color:#1a1e27}
+    .card-center{background:#f6f8ff;border-color:#d6dcff}
+    .badge{display:inline-flex;align-items:center;gap:4px;background:#f0f1f6;border-radius:999px;padding:4px 10px;margin-right:6px;font-size:12px;font-weight:600;color:#50586b}
+    .status{font-size:12px;color:#555;margin:6px 0 2px;min-height:18px}
+    .btn-inline{margin-top:10px;padding:10px 14px;border-radius:12px;border:1px solid #c5c9d8;background:#fff;color:#1a1e27;font-size:13px;font-weight:600}
+    .btn-inline:hover{background:#f0f2f8}
+    .top3-popup{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(17,23,34,.35);transition:opacity .25s ease;opacity:1}
+    .top3-popup.hidden{opacity:0;pointer-events:none}
+    .popup-content{background:#fff;border-radius:24px;box-shadow:0 24px 60px rgba(17,23,34,.18);padding:26px 24px 22px;max-width:420px;width:100%;position:relative;color:#111;display:flex;flex-direction:column;gap:18px}
+    .popup-title{font-size:18px;font-weight:700;margin:0;color:#111}
+    .popup-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;border:0;background:#f0f2f8;color:#111;font-size:20px;line-height:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .popup-close:hover{background:#e0e3ed}
+    .popup-list{display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow-y:auto;padding-right:4px}
+    .popup-card{border:1px solid #e1e5f2;border-radius:18px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 32px rgba(17,23,34,.12)}
+    .popup-card-header{display:flex;align-items:center;gap:10px}
+    .popup-rank{font-size:15px;font-weight:700;color:#69728a}
+    .popup-name{font-size:17px;font-weight:700;color:#111}
+    .popup-meta{font-size:13px;color:#586076;display:flex;flex-wrap:wrap;gap:6px}
+    .popup-action{align-self:flex-start;padding:10px 16px;border-radius:12px;border:0;background:#111;color:#fff;font-size:14px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    .popup-action:hover{background:#2f3443}
+    .popup-icon{font-size:20px}
+    @media (max-width:768px){
+      .popup-content{padding:22px 20px 18px;border-radius:22px}
+      .popup-card{padding:14px}
+      .popup-name{font-size:16px}
+    }
   </style>
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=d1edc654e39b717ae9109665b63453f6&libraries=services&autoload=false"></script>
 </head>
 <body>
   <div id="map"></div>
 
-  <div class="sheet">
-    <!-- 참여자 입력 -->
-    <div class="row"><input id="p1" placeholder="본인 위치" /><button class="btn-location">내 위치</button></div>
-    <div class="row"><input id="p2" placeholder="참여자2 장소 (예: 홍대입구역)" /></div>
-    <!-- 검색 파라미터 -->
-    <div class="row">
-      <button id="btnCenter">중간지점→지역 Top3</button>
+  <div id="top3-popup" class="top3-popup hidden" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="popup-content">
+      <button type="button" class="popup-close" aria-label="닫기">×</button>
+      <h2 class="popup-title">추천 Top3</h2>
+      <div class="popup-list"></div>
     </div>
-    <!-- 탭 -->
-    <div class="row" id="tabs" style="gap:6px">
-      <button class="tab on" data-cat="all">전체</button>
-      <button class="tab" data-cat="food">맛집</button>
-      <button class="tab" data-cat="pub">술집</button>
-      <button class="tab" data-cat="cafe">카페</button>
-      <button class="tab" data-cat="play">놀거리</button>
+  </div>
+
+  <div class="sheet collapsed" id="sheet">
+    <div class="sheet-header" id="sheetHeader">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-header-bar">
+        <span class="sheet-title">검색 · 결과</span>
+        <button type="button" class="sheet-toggle" id="sheetToggle" aria-expanded="false">패널 펼치기</button>
+      </div>
     </div>
-    <div class="status" id="status">준비됨</div>
-    <div id="results"></div>
+    <div class="sheet-body" id="sheetBody">
+      <!-- 참여자 입력 -->
+      <div class="row"><input id="p1" placeholder="본인 위치" /><button class="btn-location" type="button">내 위치</button></div>
+      <div class="row"><input id="p2" placeholder="참여자2 장소 (예: 홍대입구역)" /></div>
+      <!-- 검색 파라미터 -->
+      <div class="row">
+        <button id="btnCenter" class="btn-primary" type="button">중간지점→지역 Top3</button>
+      </div>
+      <!-- 탭 -->
+      <div class="row" id="tabs" style="gap:6px">
+        <button class="tab on" data-cat="all" type="button">전체</button>
+        <button class="tab" data-cat="food" type="button">맛집</button>
+        <button class="tab" data-cat="pub" type="button">술집</button>
+        <button class="tab" data-cat="cafe" type="button">카페</button>
+        <button class="tab" data-cat="play" type="button">놀거리</button>
+      </div>
+      <div class="status" id="status">준비됨</div>
+      <div id="results"></div>
+    </div>
   </div>
 
   <!-- 모듈 스크립트 -->

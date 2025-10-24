@@ -1,7 +1,5 @@
-// session-ui/app.js
-import { geometricCenter } from './core/center.js';
-// import { clusterAreas } from './core/center.js'; // 필요 시 사용
-// import { categorizeAndRank, createAreaRanks } from './core/rank.js'; // 외부 랭킹 사용 시
+import { geometricCenter, clusterAreas } from './core/center.js';
+import { categorizeAndRank, createAreaRanks } from './core/rank.js';
 
 export function initApp(){
   const map = new kakao.maps.Map(document.getElementById('map'), {
@@ -12,8 +10,8 @@ export function initApp(){
   const $ = s=>document.querySelector(s);
   const status = t=>($('#status').textContent=t);
 
+  let originMarker=null, cache=null;
   const sheet = $('#sheet');
-  const sheetToggle = $('#sheetToggle');
   const sheetHeader = $('#sheetHeader');
   const top3Popup = $('#top3-popup');
   const top3Title = top3Popup.querySelector('.popup-title');
@@ -29,9 +27,9 @@ export function initApp(){
     sheetOpen=open;
     sheet.classList.toggle('open', open);
     sheet.classList.toggle('collapsed', !open);
-    sheetToggle.setAttribute('aria-expanded', String(open));
-    sheetToggle.textContent = open ? '패널 접기' : '패널 펼치기';
+    sheet.setAttribute('aria-expanded', String(open));
   }
+
   function collapseSheet(){ setSheetState(false); }
   function expandSheet(){ setSheetState(true); }
 
@@ -42,14 +40,25 @@ export function initApp(){
   }
 
   function getCategoryIcon(cat){
-    const map={ area:'📍', all:'📍', food:'🍽️', pub:'🍻', cafe:'☕', play:'🎉', etc:'⭐' };
+    const map={
+      area:'📍',
+      all:'📍',
+      food:'🍽️',
+      pub:'🍻',
+      cafe:'☕',
+      play:'🎉',
+      etc:'⭐'
+    };
     if(!cat) return map.area;
     return map[cat] || map.etc;
   }
 
   function showTop3Popup(items, options={}){
     const { title='추천 Top3', mode='place' } = options;
-    if(!items || !items.length){ hideTop3Popup(); return; }
+    if(!items || !items.length){
+      hideTop3Popup();
+      return;
+    }
     lastPopup = { items, options: { ...options } };
     top3Title.textContent = title;
     top3List.innerHTML='';
@@ -75,7 +84,7 @@ export function initApp(){
 
       const meta=document.createElement('div');
       meta.className='popup-meta';
-      if(item.distance!=null){
+      if(item.distance){
         meta.appendChild(document.createElement('span')).textContent=`중간지점에서 ${formatDistance(item.distance)}`;
       }
       if(item.road_address_name || item.address_name){
@@ -108,9 +117,7 @@ export function initApp(){
         const lat=item.y ? parseFloat(item.y) : item.lat;
         const lng=item.x ? parseFloat(item.x) : item.lng;
         const label=item.place_name || item.name || '목적지';
-        const kakaoLink = (lat!=null && lng!=null)
-          ? `https://map.kakao.com/link/to/${encodeURIComponent(label)},${lat},${lng}`
-          : (item.place_url||'#');
+        const kakaoLink = lat && lng ? `https://map.kakao.com/link/to/${encodeURIComponent(label)},${lat},${lng}` : (item.place_url||'#');
         link.href=item.place_url || kakaoLink;
         link.target='_blank';
         link.rel='noopener';
@@ -127,7 +134,7 @@ export function initApp(){
   }
 
   const formatDistance = distance => {
-    if(distance==null) return '';
+    if(!distance && distance !== 0) return '';
     if(distance >= 1000) {
       const km = distance / 1000;
       return (km >= 10 ? Math.round(km) : km.toFixed(1)) + 'km';
@@ -138,9 +145,7 @@ export function initApp(){
   function setOrigin(lat,lng){
     if(originMarker) originMarker.setMap(null);
     originMarker=new kakao.maps.Marker({ position:new kakao.maps.LatLng(lat,lng), zIndex:10 });
-    originMarker.setMap(map);
-    map.setCenter(originMarker.getPosition());
-    map.setLevel(5);
+    originMarker.setMap(map); map.setCenter(originMarker.getPosition()); map.setLevel(5);
   }
 
   function addAreaMarkers(areas){
@@ -148,10 +153,17 @@ export function initApp(){
     areaLabels.forEach(l=>l.setMap(null));
     areaMarkers=[]; areaLabels=[];
     areas.forEach((area, idx)=>{
-      const m = new kakao.maps.Marker({ position: new kakao.maps.LatLng(area.lat, area.lng), title: area.name });
+      const m = new kakao.maps.Marker({ 
+      const m = new kakao.maps.Marker({
+        position: new kakao.maps.LatLng(area.lat, area.lng),
+        title: area.name
+      }); 
+      });
       m.setMap(map);
+      
       areaMarkers.push(m);
 
+      // 마커에 번호 표시
       const label = new kakao.maps.CustomOverlay({
         position: new kakao.maps.LatLng(area.lat, area.lng),
         content: `<div style="background:#111;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">${idx+1}</div>`,
@@ -159,8 +171,10 @@ export function initApp(){
       });
       label.setMap(map);
       areaLabels.push(label);
-
+      
       kakao.maps.event.addListener(m, 'click', ()=>{
+        const iw = new kakao.maps.InfoWindow({ 
+          content: `<div style="padding:8px"><strong>${area.name}</strong><br/>거리: ${Math.round(area.distance/1000)}km</div>` 
         const iw = new kakao.maps.InfoWindow({
           content: `<div style="padding:8px"><strong>${area.name}</strong><br/>중간지점에서 ${formatDistance(area.distance)}</div>`
         });
@@ -179,45 +193,27 @@ export function initApp(){
     });
   }
 
-  function reverseGeocode(lat, lng){
-    return new Promise((resolve, reject)=>{
-      geocoder.coord2Address(lng, lat, (result, status)=>{
-        if(status === kakao.maps.services.Status.OK && result && result[0]){
-          const r = result[0];
-          resolve(r.road_address?.address_name || r.address?.address_name || `${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        } else {
-          resolve(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-        }
-      });
-    });
-  }
-
   function getCurrentLocation(){
     return new Promise((res, rej)=>{
-      if(!navigator.geolocation){ rej('Geolocation not supported'); return; }
+      if(!navigator.geolocation){
+        rej('Geolocation not supported');
+        return;
+      }
       navigator.geolocation.getCurrentPosition(
-        pos=>{ const {latitude, longitude} = pos.coords; res({lat:latitude, lng:longitude}); },
-        err=>rej(err.message||'Location error'),
-        { enableHighAccuracy:true, timeout:8000, maximumAge:2000 }
-      );
-    });
-  }
-
-  // 서울 인기 지역 샘플 (필요시 자유롭게 보강)
-  const POPULAR_AREAS = [
-    { name: '강남역', lat:37.4979, lng:127.0276 },
-    { name: '홍대입구', lat:37.5575, lng:126.9249 },
-    { name: '신촌',   lat:37.5598, lng:126.9426 },
-    { name: '사당',   lat:37.4766, lng:126.9816 },
-    { name: '건대입구', lat:37.5405, lng:127.0692 },
-    { name: '종로3가', lat:37.5717, lng:126.9918 },
-    { name: '잠실',   lat:37.5133, lng:127.1002 },
-    { name: '왕십리', lat:37.5613, lng:127.0371 },
+        pos=>{
+          const {latitude, longitude} = pos.coords;
+@@ -139,160 +273,285 @@ export function initApp(){
   ];
 
   async function getPopularAreas(center){
-    return POPULAR_AREAS
-      .map(area => ({ ...area, distance: haversine(center, { lat: area.lat, lng: area.lng }) }))
+    // 중간지점에서 각 인기 지역까지의 거리 계산
+    const areasWithDistance = POPULAR_AREAS.map(area => {
+      const distance = haversine(center, { lat: area.lat, lng: area.lng });
+      return { ...area, distance };
+    });
+    
+    // 거리순으로 정렬하고 Top3 선택
+    return areasWithDistance
       .sort((a, b) => a.distance - b.distance)
       .slice(0, 3);
   }
@@ -234,7 +230,21 @@ export function initApp(){
     const el = $('#results'); el.innerHTML='';
     const centerCard = buildCenterCard();
     if(centerCard) el.appendChild(centerCard);
-    const top = (list||[]).slice(0,3);
+    const top = list.slice(0,3);
+    if(top.length===0){ el.innerHTML='<div class="card">결과 없음</div>'; return; }
+    top.forEach(p=>{
+      const card=document.createElement('div'); card.className='card';
+      card.innerHTML = `
+        <div style="font-weight:700">${p.place_name||'(이름 없음)'}</div>
+        <div style="color:#666;font-size:13px">${p.road_address_name||p.address_name||''}</div>
+        <div style="margin:6px 0">
+          <span class="badge">${p.cat||'기타'}</span>
+          <span class="badge">${p._reasons.join(' · ')}</span>
+        </div>
+        <div style="display:flex;gap:8px">
+          <a class="detail" href="${p.place_url||'#'}" target="_blank"><button>상세</button></a>
+        </div>`;
+      el.appendChild(card);
     if(top.length===0){
       hideTop3Popup();
       const empty=document.createElement('div');
@@ -300,7 +310,27 @@ export function initApp(){
     const el = $('#results'); el.innerHTML='';
     const centerCard = buildCenterCard();
     if(centerCard) el.appendChild(centerCard);
-    const top = (areas||[]).slice(0,3);
+    const top = areas.slice(0,3);
+    if(top.length===0){ el.innerHTML='<div class=\"card\">지역 결과 없음</div>'; return; }
+    top.forEach((area, idx)=>{
+      const card=document.createElement('div'); card.className='card';
+      card.innerHTML = `
+        <div style=\"display:flex;justify-content:space-between;align-items:center\">
+          <div style=\"font-weight:700\">${area.name}</div>
+          <button data-idx=\"${idx}\" class=\"btnAreaPick\">선택</button>
+        </div>
+        <div style=\"color:#666;font-size:13px\">거리: ${Math.round(area.distance/1000)}km</div>
+        <div style=\"margin:6px 0\"><span class=\"badge\">인기 지역</span></div>`;
+      el.appendChild(card);
+    });
+    el.querySelectorAll('.btnAreaPick').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const idx=parseInt(btn.getAttribute('data-idx'),10);
+        const area = top[idx];
+        cache._selectedArea = area;
+        showAreaCategories(area);
+        status(`✅ 지역 선택: ${area.name} — 카테고리 선택`);
+      });
     if(top.length===0){
       hideTop3Popup();
       const empty=document.createElement('div');
@@ -338,96 +368,24 @@ export function initApp(){
       { name: '카페', key: 'cafe' },
       { name: '놀거리', key: 'play' }
     ];
-
+    
     categories.forEach(cat=>{
       const card=document.createElement('div'); card.className='card';
       card.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center">
-          <div style="font-weight:700">${area.name} ${cat.name}</div>
-          <button data-cat="${cat.key}" class="btnCategoryPick">보기</button>
+        <div style=\"display:flex;justify-content:space-between;align-items:center\">
+          <div style=\"font-weight:700\">${area.name} ${cat.name}</div>
+          <button data-cat=\"${cat.key}\" class=\"btnCategoryPick\">보기</button>
         </div>
-        <div style="color:#666;font-size:13px">${area.name} 지역의 ${cat.name} Top3</div>`;
+        <div style=\"color:#666;font-size:13px\">${area.name} 지역의 ${cat.name} Top3</div>`;
       el.appendChild(card);
     });
-
+    
     el.querySelectorAll('.btnCategoryPick').forEach(btn=>{
-      btn.addEventListener('click', async ()=>{
+      btn.addEventListener('click', ()=>{
         const cat = btn.getAttribute('data-cat');
-        await ensureAreaRanks(area); // 필요 시 검색/랭킹 계산
-        const table = { all:'rank_all', food:'rank_food', pub:'rank_pub', cafe:'rank_cafe', play:'rank_play' }[cat] || 'rank_all';
-        const list = (area.ranks && area.ranks[table]) ? area.ranks[table] : [];
-        renderTop3(list);
-        status(`✅ ${area.name} ${cat} Top3`);
+        status(`✅ ${area.name} ${cat} 선택 — 실제 장소 검색 필요`);
       });
     });
-  }
-
-  // Kakao Places 검색 헬퍼
-  function searchPlaces(keyword, lat, lng, radius=1500, size=15){
-    return new Promise((resolve)=>{
-      const opts = { size: Math.min(size, 15) };
-      if(lat!=null && lng!=null){
-        opts.location = new kakao.maps.LatLng(lat, lng);
-        opts.radius = radius;
-        opts.sort = kakao.maps.services.SortBy.DISTANCE;
-      }
-      ps.keywordSearch(keyword, (data, s)=>{
-        if(s === kakao.maps.services.Status.OK && data){ resolve(data); }
-        else resolve([]);
-      }, opts);
-    });
-  }
-
-  // 카테고리별 키워드 묶음
-  const CAT_KEYWORDS = {
-    all: ['맛집','술집','카페','놀거리'],
-    food: ['맛집','식당','한식','양식','일식','중식'],
-    pub: ['술집','바','포차','펍'],
-    cafe: ['카페','베이커리'],
-    play: ['놀거리','액티비티','볼링','노래방','보드게임']
-  };
-
-  // 특정 지역의 랭킹이 없으면 검색해서 생성
-  async function ensureAreaRanks(area){
-    if(area.ranks) return area.ranks;
-
-    status(`🔎 ${area.name} 주변 장소 수집 중…`);
-    const collect = async (keys)=>{
-      const uniq = new Map();
-      for(const kw of keys){
-        const items = await searchPlaces(kw, area.lat, area.lng, 1500, 15);
-        for(const p of items){
-          const id = p.id || `${p.place_name}|${p.x}|${p.y}`;
-          if(!uniq.has(id)){
-            const lat = parseFloat(p.y), lng = parseFloat(p.x);
-            const dist = haversine({lat, lng}, {lat:area.lat, lng:area.lng});
-            uniq.set(id, { ...p, lat, lng, distance: dist });
-          }else{
-            // 키워드가 여러 번 매칭되면 가벼운 보너스 (랭킹 가중치용)
-            const cur = uniq.get(id);
-            cur.distance = Math.max(0, cur.distance - 30); // 30m 보정
-            uniq.set(id, cur);
-          }
-        }
-      }
-      // 간단 랭킹: 거리 오름차순 (가중치 반영 후)
-      return Array.from(uniq.values()).sort((a,b)=>a.distance-b.distance).slice(0, 12);
-    };
-
-    const rank_all  = await collect(CAT_KEYWORDS.all);
-    const rank_food = await collect(CAT_KEYWORDS.food);
-    const rank_pub  = await collect(CAT_KEYWORDS.pub);
-    const rank_cafe = await collect(CAT_KEYWORDS.cafe);
-    const rank_play = await collect(CAT_KEYWORDS.play);
-
-    area.ranks = {
-      rank_all,
-      rank_food,
-      rank_pub,
-      rank_cafe,
-      rank_play,
-    };
-    return area.ranks;
   }
 
   function releasePointerCapture(e){
@@ -436,11 +394,6 @@ export function initApp(){
     pointerState=null;
     sheet.classList.remove('dragging');
   }
-
-  sheetToggle.addEventListener('click', e=>{
-    e.stopPropagation();
-    setSheetState(!sheetOpen);
-  });
 
   sheetHeader.addEventListener('pointerdown', e=>{
     if(e.target.closest('button')) return;
@@ -452,11 +405,11 @@ export function initApp(){
   sheetHeader.addEventListener('pointermove', e=>{
     if(!pointerState || e.pointerId!==pointerState.pointerId) return;
     const delta=e.clientY-pointerState.startY;
-    if(Math.abs(delta)>6) pointerState.moved=true;
-    if(delta<=-60){
+    if(Math.abs(delta)>4) pointerState.moved=true;
+    if(delta<=-36){
       releasePointerCapture(e);
       setSheetState(true);
-    } else if(delta>=60){
+    } else if(delta>=36){
       releasePointerCapture(e);
       setSheetState(false);
     }
@@ -474,13 +427,20 @@ export function initApp(){
 
   sheetHeader.addEventListener('pointercancel', releasePointerCapture);
 
-  top3Close.addEventListener('click', ()=>{ hideTop3Popup(); });
-  top3Popup.addEventListener('click', e=>{ if(e.target===top3Popup) hideTop3Popup(); });
+  top3Close.addEventListener('click', ()=>{
+    hideTop3Popup();
+  });
+
+  top3Popup.addEventListener('click', e=>{
+    if(e.target===top3Popup){
+      hideTop3Popup();
+    }
+  });
 
   setSheetState(false);
   hideTop3Popup();
 
-  // 내 위치 버튼: 참여자1
+  // 내 위치 버튼 이벤트 (참여자1만)
   document.querySelector('.btn-location').addEventListener('click', async ()=>{
     try{
       status(`📍 위치 감지 중...`);
@@ -494,7 +454,7 @@ export function initApp(){
     }
   });
 
-  // 중간지점 → 지역/장소 Top3
+  // 버튼: 중간지점 → 후보 수집 → 랭킹
   $('#btnCenter').addEventListener('click', async ()=>{
     try{
       status('🧭 중간지점 계산…');
@@ -510,9 +470,11 @@ export function initApp(){
       status('📍 중간지점 주소 확인 중…');
       const centerAddress = await reverseGeocode(center.lat, center.lng);
 
+      // 키워드 검색 대신 미리 정의된 인기 지역들 사용
       status(`📡 인기 지역 분석 중...`);
       const popularAreas = await getPopularAreas(center);
 
+      cache = { participants, center, areas: popularAreas };
       const participantsInfo = [g1, g2].map((geo, idx)=>{
         const base = geo.raw||{};
         const display = base.place_name || base.road_address_name || base.address_name || (idx===0 ? q1 : q2);
@@ -532,8 +494,12 @@ export function initApp(){
         _areas: popularAreas
       };
       renderAreaTop3(popularAreas);
+      
 
+      // 선택된 지역들을 지도에 마커로 표시
       addAreaMarkers(popularAreas);
+      const distInfo = popularAreas.map(a => `${a.name}(${Math.round(a.distance/1000)}km)`).join(', ');
+      status(`✅ 중간지점: (${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}) | 가까운지역: ${distInfo}`);
       const distInfo = popularAreas.map(a => `${a.name}(${formatDistance(a.distance)})`).join(', ');
       status(`✅ 중간지점: ${centerAddress} (${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}) | 추천지역: ${distInfo}`);
     }catch(e){
@@ -541,9 +507,9 @@ export function initApp(){
     }
   });
 
-  // 탭 전환: 선택된 지역 기준 카테고리별 Top3
+  // 탭 전환: 재검색 없이 캐시 필터
   document.querySelectorAll('#tabs .tab').forEach(tab=>{
-    tab.addEventListener('click', async ()=>{
+    tab.addEventListener('click', ()=>{
       if(!cache) return status('ℹ️ 먼저 중간지점을 계산하세요');
       document.querySelectorAll('#tabs .tab').forEach(t=>t.classList.remove('on'));
       tab.classList.add('on');
@@ -551,7 +517,6 @@ export function initApp(){
       const table = { all:'rank_all', food:'rank_food', pub:'rank_pub', cafe:'rank_cafe', play:'rank_play' }[cat] || 'rank_all';
       const area = cache._areaPick || (cache._areas ? cache._areas[0] : null);
       if(area){
-        await ensureAreaRanks(area);
         renderTop3(area.ranks[table]);
       } else {
         renderAreaTop3(cache._areas||[]);
@@ -559,5 +524,6 @@ export function initApp(){
     });
   });
 
+  status('✅ 준비됨 — 참여자 장소 입력 후 “중간지점→Top3” 클릭');
   status('✅ 준비됨 — 하단 패널을 끌어올려 참여자 장소를 입력하고 “중간지점→지역 Top3”를 눌러보세요');
 }

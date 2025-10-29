@@ -10,7 +10,6 @@ export function initApp(){
   const $ = s=>document.querySelector(s);
   const status = t=>($('#status').textContent=t);
 
-  let originMarker=null, cache=null;
   const sheet = $('#sheet');
   const sheetHeader = $('#sheetHeader');
   const top3Popup = $('#top3-popup');
@@ -20,7 +19,7 @@ export function initApp(){
 
   let originMarker=null, cache=null, areaMarkers=[], areaLabels=[];
   let sheetOpen=false;
-  let pointerState=null;
+  const dragState={ active:false, startY:0, moved:false, committed:false, pointerId:null, type:null };
   let lastPopup=null;
 
   function setSheetState(open){
@@ -153,14 +152,11 @@ export function initApp(){
     areaLabels.forEach(l=>l.setMap(null));
     areaMarkers=[]; areaLabels=[];
     areas.forEach((area, idx)=>{
-      const m = new kakao.maps.Marker({ 
       const m = new kakao.maps.Marker({
         position: new kakao.maps.LatLng(area.lat, area.lng),
         title: area.name
-      }); 
       });
       m.setMap(map);
-      
       areaMarkers.push(m);
 
       // 마커에 번호 표시
@@ -173,8 +169,6 @@ export function initApp(){
       areaLabels.push(label);
       
       kakao.maps.event.addListener(m, 'click', ()=>{
-        const iw = new kakao.maps.InfoWindow({ 
-          content: `<div style="padding:8px"><strong>${area.name}</strong><br/>거리: ${Math.round(area.distance/1000)}km</div>` 
         const iw = new kakao.maps.InfoWindow({
           content: `<div style="padding:8px"><strong>${area.name}</strong><br/>중간지점에서 ${formatDistance(area.distance)}</div>`
         });
@@ -202,7 +196,7 @@ export function initApp(){
       navigator.geolocation.getCurrentPosition(
         pos=>{
           const {latitude, longitude} = pos.coords;
-@@ -139,160 +273,285 @@ export function initApp(){
+@@ -139,160 +273,389 @@ export function initApp(){
   ];
 
   async function getPopularAreas(center){
@@ -231,20 +225,6 @@ export function initApp(){
     const centerCard = buildCenterCard();
     if(centerCard) el.appendChild(centerCard);
     const top = list.slice(0,3);
-    if(top.length===0){ el.innerHTML='<div class="card">결과 없음</div>'; return; }
-    top.forEach(p=>{
-      const card=document.createElement('div'); card.className='card';
-      card.innerHTML = `
-        <div style="font-weight:700">${p.place_name||'(이름 없음)'}</div>
-        <div style="color:#666;font-size:13px">${p.road_address_name||p.address_name||''}</div>
-        <div style="margin:6px 0">
-          <span class="badge">${p.cat||'기타'}</span>
-          <span class="badge">${p._reasons.join(' · ')}</span>
-        </div>
-        <div style="display:flex;gap:8px">
-          <a class="detail" href="${p.place_url||'#'}" target="_blank"><button>상세</button></a>
-        </div>`;
-      el.appendChild(card);
     if(top.length===0){
       hideTop3Popup();
       const empty=document.createElement('div');
@@ -311,26 +291,6 @@ export function initApp(){
     const centerCard = buildCenterCard();
     if(centerCard) el.appendChild(centerCard);
     const top = areas.slice(0,3);
-    if(top.length===0){ el.innerHTML='<div class=\"card\">지역 결과 없음</div>'; return; }
-    top.forEach((area, idx)=>{
-      const card=document.createElement('div'); card.className='card';
-      card.innerHTML = `
-        <div style=\"display:flex;justify-content:space-between;align-items:center\">
-          <div style=\"font-weight:700\">${area.name}</div>
-          <button data-idx=\"${idx}\" class=\"btnAreaPick\">선택</button>
-        </div>
-        <div style=\"color:#666;font-size:13px\">거리: ${Math.round(area.distance/1000)}km</div>
-        <div style=\"margin:6px 0\"><span class=\"badge\">인기 지역</span></div>`;
-      el.appendChild(card);
-    });
-    el.querySelectorAll('.btnAreaPick').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const idx=parseInt(btn.getAttribute('data-idx'),10);
-        const area = top[idx];
-        cache._selectedArea = area;
-        showAreaCategories(area);
-        status(`✅ 지역 선택: ${area.name} — 카테고리 선택`);
-      });
     if(top.length===0){
       hideTop3Popup();
       const empty=document.createElement('div');
@@ -388,44 +348,148 @@ export function initApp(){
     });
   }
 
-  function releasePointerCapture(e){
-    if(!pointerState || (e && e.pointerId!==pointerState.pointerId)) return;
-    try{ sheetHeader.releasePointerCapture(pointerState.pointerId); }catch(_){/* ignore */}
-    pointerState=null;
+  function beginDrag(y,{pointerId=null,type=null}={}){
+    dragState.active=true;
+    dragState.startY=y;
+    dragState.moved=false;
+    dragState.committed=false;
+    dragState.pointerId=pointerId;
+    dragState.type=type;
+    sheet.classList.add('dragging');
+  }
+
+  function endDrag(){
+    if(!dragState.active) return;
+    if(dragState.type==='pointer' && dragState.pointerId!=null){
+      try{ sheetHeader.releasePointerCapture(dragState.pointerId); }catch(_){/* ignore */}
+    }
+    dragState.active=false;
+    dragState.pointerId=null;
+    dragState.type=null;
     sheet.classList.remove('dragging');
   }
 
-  sheetHeader.addEventListener('pointerdown', e=>{
-    if(e.target.closest('button')) return;
-    pointerState={ pointerId:e.pointerId, startY:e.clientY, moved:false };
-    sheetHeader.setPointerCapture(e.pointerId);
-    sheet.classList.add('dragging');
-  });
+  const DRAG_THRESHOLD=28;
 
-  sheetHeader.addEventListener('pointermove', e=>{
-    if(!pointerState || e.pointerId!==pointerState.pointerId) return;
-    const delta=e.clientY-pointerState.startY;
-    if(Math.abs(delta)>4) pointerState.moved=true;
-    if(delta<=-36){
-      releasePointerCapture(e);
+  function updateDrag(y){
+    if(!dragState.active) return;
+    const delta=y-dragState.startY;
+    if(Math.abs(delta)>4) dragState.moved=true;
+    if(delta<=-DRAG_THRESHOLD){
+      dragState.committed=true;
+      endDrag();
       setSheetState(true);
-    } else if(delta>=36){
-      releasePointerCapture(e);
+    } else if(delta>=DRAG_THRESHOLD){
+      dragState.committed=true;
+      endDrag();
       setSheetState(false);
     }
-  });
+  }
 
-  sheetHeader.addEventListener('pointerup', e=>{
-    if(!pointerState || e.pointerId!==pointerState.pointerId){
-      releasePointerCapture(e);
+  function completeDrag({allowTapToggle=true}={}){
+    if(!dragState.active){
+      sheet.classList.remove('dragging');
+      if(allowTapToggle && !dragState.committed && !dragState.moved){
+        setSheetState(!sheetOpen);
+      }
+      dragState.moved=false;
+      dragState.committed=false;
       return;
     }
-    const tapped=!pointerState.moved;
-    releasePointerCapture(e);
-    if(tapped) setSheetState(!sheetOpen);
-  });
+    const wasMoved=dragState.moved;
+    const wasCommitted=dragState.committed;
+    endDrag();
+    if(allowTapToggle && !wasMoved && !wasCommitted){
+      setSheetState(!sheetOpen);
+    }
+    dragState.moved=false;
+    dragState.committed=false;
+  }
 
-  sheetHeader.addEventListener('pointercancel', releasePointerCapture);
+  const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
+
+  if(supportsPointer){
+    sheetHeader.addEventListener('pointerdown', e=>{
+      if(e.pointerType==='mouse' && e.button!==0) return;
+      if(e.target.closest('button')) return;
+      beginDrag(e.clientY,{pointerId:e.pointerId,type:'pointer'});
+      try{ sheetHeader.setPointerCapture(e.pointerId); }catch(_){/* ignore */}
+    });
+
+    sheetHeader.addEventListener('pointermove', e=>{
+      if(!dragState.active || dragState.pointerId!==e.pointerId) return;
+      if(e.cancelable) e.preventDefault();
+      updateDrag(e.clientY);
+    });
+
+    sheetHeader.addEventListener('pointerup', e=>{
+      if(dragState.pointerId!==e.pointerId){
+        completeDrag({allowTapToggle:false});
+        return;
+      }
+      const shouldToggle=!dragState.moved && !dragState.committed;
+      endDrag();
+      if(shouldToggle) setSheetState(!sheetOpen);
+      dragState.moved=false;
+      dragState.committed=false;
+    });
+
+    sheetHeader.addEventListener('pointercancel', ()=>{
+      completeDrag({allowTapToggle:false});
+    });
+  } else {
+    let touchId=null;
+
+    sheetHeader.addEventListener('touchstart', e=>{
+      if(touchId!=null) return;
+      const t=e.changedTouches[0];
+      touchId=t.identifier;
+      beginDrag(t.clientY,{type:'touch'});
+    }, {passive:true});
+
+    sheetHeader.addEventListener('touchmove', e=>{
+      if(touchId==null) return;
+      const t=Array.from(e.changedTouches).find(tt=>tt.identifier===touchId);
+      if(!t) return;
+      updateDrag(t.clientY);
+      if(dragState.active && e.cancelable) e.preventDefault();
+    }, {passive:false});
+
+    const endTouch = allowTapToggle=>{
+      completeDrag({allowTapToggle});
+      touchId=null;
+    };
+
+    sheetHeader.addEventListener('touchend', ()=>endTouch(true));
+    sheetHeader.addEventListener('touchcancel', ()=>endTouch(false));
+
+    sheetHeader.addEventListener('mousedown', e=>{
+      if(e.button!==0) return;
+      if(e.target.closest('button')) return;
+      beginDrag(e.clientY,{type:'mouse'});
+      const moveHandler=ev=>{
+        if(!dragState.active) return;
+        updateDrag(ev.clientY);
+      };
+      const upHandler=ev=>{
+        document.removeEventListener('mousemove', moveHandler);
+        document.removeEventListener('mouseup', upHandler);
+        if(!dragState.active){
+          if(!dragState.moved && !dragState.committed) setSheetState(!sheetOpen);
+          dragState.moved=false;
+          dragState.committed=false;
+          return;
+        }
+        const shouldToggle=!dragState.moved && !dragState.committed;
+        endDrag();
+        if(shouldToggle) setSheetState(!sheetOpen);
+        dragState.moved=false;
+        dragState.committed=false;
+      };
+      document.addEventListener('mousemove', moveHandler);
+      document.addEventListener('mouseup', upHandler);
+    });
+  }
 
   top3Close.addEventListener('click', ()=>{
     hideTop3Popup();
@@ -474,7 +538,6 @@ export function initApp(){
       status(`📡 인기 지역 분석 중...`);
       const popularAreas = await getPopularAreas(center);
 
-      cache = { participants, center, areas: popularAreas };
       const participantsInfo = [g1, g2].map((geo, idx)=>{
         const base = geo.raw||{};
         const display = base.place_name || base.road_address_name || base.address_name || (idx===0 ? q1 : q2);
@@ -494,12 +557,9 @@ export function initApp(){
         _areas: popularAreas
       };
       renderAreaTop3(popularAreas);
-      
 
       // 선택된 지역들을 지도에 마커로 표시
       addAreaMarkers(popularAreas);
-      const distInfo = popularAreas.map(a => `${a.name}(${Math.round(a.distance/1000)}km)`).join(', ');
-      status(`✅ 중간지점: (${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}) | 가까운지역: ${distInfo}`);
       const distInfo = popularAreas.map(a => `${a.name}(${formatDistance(a.distance)})`).join(', ');
       status(`✅ 중간지점: ${centerAddress} (${center.lat.toFixed(4)}, ${center.lng.toFixed(4)}) | 추천지역: ${distInfo}`);
     }catch(e){
@@ -524,6 +584,5 @@ export function initApp(){
     });
   });
 
-  status('✅ 준비됨 — 참여자 장소 입력 후 “중간지점→Top3” 클릭');
   status('✅ 준비됨 — 하단 패널을 끌어올려 참여자 장소를 입력하고 “중간지점→지역 Top3”를 눌러보세요');
 }

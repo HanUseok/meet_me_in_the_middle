@@ -19,14 +19,48 @@ export function initApp(){
 
   let originMarker=null, cache=null, areaMarkers=[], areaLabels=[];
   let sheetOpen=false;
-  const dragState={ active:false, startY:0, moved:false, committed:false, pointerId:null, type:null };
+  const SHEET_PEEK=76;
+  const dragState={
+    active:false,
+    startY:0,
+    startOffset:0,
+    currentOffset:0,
+    maxOffset:0,
+    moved:false,
+    pointerId:null,
+    type:null
+  };
   let lastPopup=null;
 
+  function resetDragState(){
+    dragState.active=false;
+    dragState.startY=0;
+    dragState.startOffset=0;
+    dragState.currentOffset=0;
+    dragState.maxOffset=0;
+    dragState.moved=false;
+    dragState.pointerId=null;
+    dragState.type=null;
+  }
+
+  function getCollapsedOffset(){
+    const rect=sheet.getBoundingClientRect();
+    return Math.max(0, rect.height - SHEET_PEEK);
+  }
+
   function setSheetState(open){
-    sheetOpen=open;
-    sheet.classList.toggle('open', open);
-    sheet.classList.toggle('collapsed', !open);
-    sheet.setAttribute('aria-expanded', String(open));
+    const collapsedOffset=getCollapsedOffset();
+    const canCollapse=collapsedOffset>16;
+    const nextOpen = canCollapse ? open : true;
+    sheetOpen=nextOpen;
+    sheet.classList.toggle('open', nextOpen);
+    sheet.classList.toggle('collapsed', !nextOpen && canCollapse);
+    sheet.setAttribute('aria-expanded', String(nextOpen));
+    sheetHeader.setAttribute('aria-expanded', String(nextOpen));
+    if(!dragState.active){
+      sheet.classList.remove('dragging');
+      sheet.style.removeProperty('--sheet-offset');
+    }
   }
 
   function collapseSheet(){ setSheetState(false); }
@@ -151,22 +185,31 @@ export function initApp(){
     areaMarkers.forEach(m=>m.setMap(null));
     areaLabels.forEach(l=>l.setMap(null));
     areaMarkers=[]; areaLabels=[];
+    const bounds = new kakao.maps.LatLngBounds();
+    let hasBounds=false;
+    if(cache && cache.center){
+      const cpos = new kakao.maps.LatLng(cache.center.lat, cache.center.lng);
+      bounds.extend(cpos);
+      hasBounds=true;
+    }
     areas.forEach((area, idx)=>{
+      const position = new kakao.maps.LatLng(area.lat, area.lng);
       const m = new kakao.maps.Marker({
-        position: new kakao.maps.LatLng(area.lat, area.lng),
+        position,
         title: area.name
       });
-      m.setMap(map);
+      m.setMap(map);      
       areaMarkers.push(m);
+      bounds.extend(position);
+      hasBounds=true;
 
       // 마커에 번호 표시
       const label = new kakao.maps.CustomOverlay({
-        position: new kakao.maps.LatLng(area.lat, area.lng),
+        position,
         content: `<div style="background:#111;color:#fff;border-radius:50%;width:24px;height:24px;display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:bold;">${idx+1}</div>`,
         yAnchor: 0.5
       });
       label.setMap(map);
-      areaLabels.push(label);
       
       kakao.maps.event.addListener(m, 'click', ()=>{
         const iw = new kakao.maps.InfoWindow({
@@ -175,6 +218,14 @@ export function initApp(){
         iw.open(map, m);
       });
     });
+
+    if(hasBounds && typeof map.setBounds==='function'){
+      try{
+        map.setBounds(bounds, 60, 60, 320, 60);
+      }catch(_){
+        try{ map.setBounds(bounds); }catch(__){/* noop */}
+      }
+    }
   }
 
   function geocodeOne(q){
@@ -196,7 +247,11 @@ export function initApp(){
       navigator.geolocation.getCurrentPosition(
         pos=>{
           const {latitude, longitude} = pos.coords;
-@@ -139,160 +273,389 @@ export function initApp(){
+          res({lat: latitude, lng: longitude});
+        },
+        err=>{
+          rej('위치 접근 거부됨: '+err.message);
+@@ -139,160 +325,376 @@ export function initApp(){
   ];
 
   async function getPopularAreas(center){
@@ -349,61 +404,58 @@ export function initApp(){
   }
 
   function beginDrag(y,{pointerId=null,type=null}={}){
-    dragState.active=true;
+    const collapsedOffset=getCollapsedOffset();
+    const canCollapse=collapsedOffset>16;
+    dragState.active=canCollapse;
     dragState.startY=y;
+    dragState.startOffset=sheetOpen ? 0 : collapsedOffset;
+    dragState.currentOffset=dragState.startOffset;
+    dragState.maxOffset=collapsedOffset;
     dragState.moved=false;
-    dragState.committed=false;
     dragState.pointerId=pointerId;
     dragState.type=type;
-    sheet.classList.add('dragging');
-  }
-
-  function endDrag(){
-    if(!dragState.active) return;
-    if(dragState.type==='pointer' && dragState.pointerId!=null){
-      try{ sheetHeader.releasePointerCapture(dragState.pointerId); }catch(_){/* ignore */}
+    if(canCollapse){
+      sheet.classList.add('dragging');
+      sheet.style.setProperty('--sheet-offset', `${dragState.currentOffset}px`);
     }
-    dragState.active=false;
-    dragState.pointerId=null;
-    dragState.type=null;
-    sheet.classList.remove('dragging');
   }
-
-  const DRAG_THRESHOLD=28;
 
   function updateDrag(y){
     if(!dragState.active) return;
     const delta=y-dragState.startY;
     if(Math.abs(delta)>4) dragState.moved=true;
-    if(delta<=-DRAG_THRESHOLD){
-      dragState.committed=true;
-      endDrag();
-      setSheetState(true);
-    } else if(delta>=DRAG_THRESHOLD){
-      dragState.committed=true;
-      endDrag();
-      setSheetState(false);
-    }
+    const maxOffset=dragState.maxOffset || getCollapsedOffset();
+    const next=Math.max(0, Math.min(maxOffset, dragState.startOffset + delta));
+    dragState.currentOffset=next;
+    sheet.style.setProperty('--sheet-offset', `${next}px`);
   }
 
-  function completeDrag({allowTapToggle=true}={}){
-    if(!dragState.active){
-      sheet.classList.remove('dragging');
-      if(allowTapToggle && !dragState.committed && !dragState.moved){
+  function finishDrag({allowTapToggle=true}={}){
+    if(dragState.type==='pointer' && dragState.pointerId!=null){
+      try{ sheetHeader.releasePointerCapture(dragState.pointerId); }catch(_){/* ignore */}
+    }
+    const wasActive=dragState.active;
+    const moved=dragState.moved;
+    const maxOffset=dragState.maxOffset || getCollapsedOffset();
+    const currentOffset=dragState.currentOffset;
+    sheet.classList.remove('dragging');
+    sheet.style.removeProperty('--sheet-offset');
+    resetDragState();
+
+    if(!wasActive){
+      if(allowTapToggle){
         setSheetState(!sheetOpen);
       }
-      dragState.moved=false;
-      dragState.committed=false;
       return;
     }
-    const wasMoved=dragState.moved;
-    const wasCommitted=dragState.committed;
-    endDrag();
-    if(allowTapToggle && !wasMoved && !wasCommitted){
+
+    if(!moved && allowTapToggle){
       setSheetState(!sheetOpen);
+      return;
     }
-    dragState.moved=false;
-    dragState.committed=false;
+
+    const shouldOpen=currentOffset <= maxOffset/2;
+    setSheetState(shouldOpen);
   }
 
   const supportsPointer = typeof window !== 'undefined' && 'PointerEvent' in window;
@@ -411,31 +463,25 @@ export function initApp(){
   if(supportsPointer){
     sheetHeader.addEventListener('pointerdown', e=>{
       if(e.pointerType==='mouse' && e.button!==0) return;
-      if(e.target.closest('button')) return;
       beginDrag(e.clientY,{pointerId:e.pointerId,type:'pointer'});
-      try{ sheetHeader.setPointerCapture(e.pointerId); }catch(_){/* ignore */}
+      if(dragState.active){
+        try{ sheetHeader.setPointerCapture(e.pointerId); }catch(_){/* ignore */}
+      }
     });
 
     sheetHeader.addEventListener('pointermove', e=>{
-      if(!dragState.active || dragState.pointerId!==e.pointerId) return;
-      if(e.cancelable) e.preventDefault();
+      if(dragState.pointerId!==e.pointerId) return;
+      if(dragState.active && e.cancelable) e.preventDefault();
       updateDrag(e.clientY);
     });
 
     sheetHeader.addEventListener('pointerup', e=>{
-      if(dragState.pointerId!==e.pointerId){
-        completeDrag({allowTapToggle:false});
-        return;
-      }
-      const shouldToggle=!dragState.moved && !dragState.committed;
-      endDrag();
-      if(shouldToggle) setSheetState(!sheetOpen);
-      dragState.moved=false;
-      dragState.committed=false;
+      const allowTapToggle = dragState.pointerId===e.pointerId;
+      finishDrag({allowTapToggle});
     });
 
     sheetHeader.addEventListener('pointercancel', ()=>{
-      completeDrag({allowTapToggle:false});
+      finishDrag({allowTapToggle:false});
     });
   } else {
     let touchId=null;
@@ -451,13 +497,13 @@ export function initApp(){
       if(touchId==null) return;
       const t=Array.from(e.changedTouches).find(tt=>tt.identifier===touchId);
       if(!t) return;
-      updateDrag(t.clientY);
       if(dragState.active && e.cancelable) e.preventDefault();
+      updateDrag(t.clientY);
     }, {passive:false});
 
     const endTouch = allowTapToggle=>{
-      completeDrag({allowTapToggle});
       touchId=null;
+      finishDrag({allowTapToggle});
     };
 
     sheetHeader.addEventListener('touchend', ()=>endTouch(true));
@@ -465,31 +511,27 @@ export function initApp(){
 
     sheetHeader.addEventListener('mousedown', e=>{
       if(e.button!==0) return;
-      if(e.target.closest('button')) return;
       beginDrag(e.clientY,{type:'mouse'});
       const moveHandler=ev=>{
         if(!dragState.active) return;
         updateDrag(ev.clientY);
       };
-      const upHandler=ev=>{
+      const upHandler=()=>{
         document.removeEventListener('mousemove', moveHandler);
         document.removeEventListener('mouseup', upHandler);
-        if(!dragState.active){
-          if(!dragState.moved && !dragState.committed) setSheetState(!sheetOpen);
-          dragState.moved=false;
-          dragState.committed=false;
-          return;
-        }
-        const shouldToggle=!dragState.moved && !dragState.committed;
-        endDrag();
-        if(shouldToggle) setSheetState(!sheetOpen);
-        dragState.moved=false;
-        dragState.committed=false;
+        finishDrag({allowTapToggle:true});
       };
       document.addEventListener('mousemove', moveHandler);
       document.addEventListener('mouseup', upHandler);
     });
   }
+
+  sheetHeader.addEventListener('keydown', e=>{
+    if(e.key==='Enter' || e.key===' '){
+      e.preventDefault();
+      setSheetState(!sheetOpen);
+    }
+  });
 
   top3Close.addEventListener('click', ()=>{
     hideTop3Popup();
@@ -556,7 +598,7 @@ export function initApp(){
         areas: popularAreas,
         _areas: popularAreas
       };
-      renderAreaTop3(popularAreas);
+      renderAreaTop3(popularAreas);      
 
       // 선택된 지역들을 지도에 마커로 표시
       addAreaMarkers(popularAreas);

@@ -7,12 +7,13 @@
   <style>
     :root{color-scheme:light dark}
     html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:#f5f7fb}
-    #map{position:fixed;inset:0;z-index:0}
-    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease;will-change:transform}
-    .sheet.collapsed{transform:translateY(calc(100% - 76px))}
-    .sheet.open{transform:translateY(0)}
+    #map{position:fixed;inset:0;width:100%;height:100%;z-index:0}
+    .sheet{--sheet-offset:0px;position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease;will-change:transform;transform:translateY(var(--sheet-offset))}
+    .sheet.collapsed{--sheet-offset:calc(100% - 76px)}
+    .sheet.open{--sheet-offset:0px}
     .sheet.dragging{transition:none}
     .sheet-header{padding:16px 20px 12px;display:flex;flex-direction:column;gap:12px;cursor:grab;-webkit-user-select:none;user-select:none;touch-action:none}
+    .sheet-header:focus-visible{outline:2px solid #4c5468;outline-offset:4px}
     .sheet-header:active{cursor:grabbing}
     .sheet-handle{width:48px;height:4px;border-radius:999px;background:#d0d4dc;margin:0 auto}
     .sheet-header-bar{display:flex;align-items:center;justify-content:center;gap:12px}
@@ -68,7 +69,7 @@
   </div>
 
   <div class="sheet collapsed" id="sheet" aria-expanded="false">
-    <div class="sheet-header" id="sheetHeader">
+    <div class="sheet-header" id="sheetHeader" role="button" tabindex="0" aria-controls="sheetBody" aria-expanded="false">
       <div class="sheet-handle" aria-hidden="true"></div>
       <div class="sheet-header-bar">
         <span class="sheet-title">검색 · 결과</span>

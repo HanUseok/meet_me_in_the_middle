@@ -5,20 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>meet_me_in_the_middle · MVP</title>
   <style>
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif}
     :root{color-scheme:light dark}
     html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:#f5f7fb}
     #map{position:fixed;inset:0;z-index:0}
-    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:16px 16px 0 0;box-shadow:0 -8px 24px rgba(0,0,0,.08);padding:12px}
-    .row{display:flex;gap:8px;align-items:center;margin:6px 0}
-    input,select,button{padding:12px;border-radius:12px;border:1px solid #ddd;font-size:15px}
-    button{background:#111;color:#fff;border:0}
-    .tab{padding:8px 12px;border:1px solid #ddd;border-radius:999px;background:#fff}
-    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease}
-    .sheet.collapsed{transform:translateY(calc(100% - 64px))}
+    .sheet{position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease;will-change:transform}
+    .sheet.collapsed{transform:translateY(calc(100% - 76px))}
     .sheet.open{transform:translateY(0)}
     .sheet.dragging{transition:none}
-    .sheet-header{padding:12px 20px 8px;display:flex;flex-direction:column;gap:10px;cursor:grab;-webkit-user-select:none;user-select:none;touch-action:none}
+    .sheet-header{padding:16px 20px 12px;display:flex;flex-direction:column;gap:12px;cursor:grab;-webkit-user-select:none;user-select:none;touch-action:none}
     .sheet-header:active{cursor:grabbing}
     .sheet-handle{width:48px;height:4px;border-radius:999px;background:#d0d4dc;margin:0 auto}
     .sheet-header-bar{display:flex;align-items:center;justify-content:center;gap:12px}
@@ -32,11 +26,6 @@
     .btn-location:hover{background:#2f3443}
     .tab{padding:8px 12px;border:1px solid #d8dce6;border-radius:999px;background:#fff;color:#1a1e27;font-weight:600}
     .tab.on{background:#111;color:#fff;border-color:#111}
-    .card{border:1px solid #eee;border-radius:12px;padding:10px;margin:6px 0}
-    .badge{display:inline-block;background:#f5f5f5;border-radius:8px;padding:2px 8px;margin-right:6px;font-size:12px}
-    .status{font-size:12px;color:#666;min-height:18px}
-    .btn-location{background:#666;padding:10px 12px;font-size:14px}
-    .btn-location:hover{background:#333}
     .card{border:1px solid #e6e9f1;border-radius:16px;padding:14px;margin:10px 0;background:#fff;color:#1a1e27;box-shadow:0 4px 12px rgba(17,23,34,.06)}
     .card-hint{background:#f6f8ff;border-color:#d6dcff;color:#1a1e27}
     .card-center{background:#f6f8ff;border-color:#d6dcff}
@@ -70,26 +59,12 @@
 <body>
   <div id="map"></div>
 
-  <div class="sheet">
-    <!-- 참여자 입력 -->
-    <div class="row"><input id="p1" placeholder="본인 위치" /><button class="btn-location">내 위치</button></div>
-    <div class="row"><input id="p2" placeholder="참여자2 장소 (예: 홍대입구역)" /></div>
-    <!-- 검색 파라미터 -->
-    <div class="row">
-      <button id="btnCenter">중간지점→지역 Top3</button>
   <div id="top3-popup" class="top3-popup hidden" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="popup-content">
       <button type="button" class="popup-close" aria-label="닫기">×</button>
       <h2 class="popup-title">추천 Top3</h2>
       <div class="popup-list"></div>
     </div>
-    <!-- 탭 -->
-    <div class="row" id="tabs" style="gap:6px">
-      <button class="tab on" data-cat="all">전체</button>
-      <button class="tab" data-cat="food">맛집</button>
-      <button class="tab" data-cat="pub">술집</button>
-      <button class="tab" data-cat="cafe">카페</button>
-      <button class="tab" data-cat="play">놀거리</button>
   </div>
 
   <div class="sheet collapsed" id="sheet" aria-expanded="false">
@@ -118,8 +93,6 @@
       <div class="status" id="status">준비됨</div>
       <div id="results"></div>
     </div>
-    <div class="status" id="status">준비됨</div>
-    <div id="results"></div>
   </div>
 
   <!-- 모듈 스크립트 -->

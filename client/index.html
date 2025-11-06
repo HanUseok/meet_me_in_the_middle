@@ -1,42 +1,65 @@
 <!doctype html>
 <html lang="ko">
 <head>
+  <!-- 문서 인코딩/뷰포트/타이틀 -->
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>meet_me_in_the_middle · MVP</title>
+
+  <!--
+    기본 스타일:
+    - :root --peek : 하단 시트가 접혔을 때 보이는 높이
+    - #map : 전 화면 지도
+    - .sheet : 하단 드래그 시트(검색/결과 패널)
+    - 팝업(.top3-popup/.popup-content/...) : 추천 Top3 모달
+  -->
   <style>
-    :root{color-scheme:light dark}
-    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:#f5f7fb}
+    :root{color-scheme:light dark;--peek:92px}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:#f5f7fb;overflow-x:hidden}
+    *, *::before, *::after{box-sizing:border-box}
     #map{position:fixed;inset:0;width:100%;height:100%;z-index:0}
-    .sheet{--sheet-offset:0px;position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease;will-change:transform;transform:translateY(var(--sheet-offset))}
-    .sheet.collapsed{--sheet-offset:calc(100% - 76px)}
+
+    /* 하단 시트(열림/접힘은 --sheet-offset 으로 제어) */
+    .sheet{--sheet-offset:0px;position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;align-items:center;max-height:78vh;transition:transform .35s ease;will-change:transform;transform:translateY(var(--sheet-offset));overscroll-behavior:contain;min-height:200px;width:100%;overflow-x:hidden}
+    .sheet > *{width:100%}
+    .sheet.collapsed{--sheet-offset:calc(100% - var(--peek))}
     .sheet.open{--sheet-offset:0px}
     .sheet.dragging{transition:none}
-    .sheet-header{padding:16px 20px 12px;display:flex;flex-direction:column;gap:12px;cursor:grab;-webkit-user-select:none;user-select:none;touch-action:none}
+    /* 접힘 상태에서는 헤더만 보이도록 본문을 숨겨 피크 높이를 일정하게 유지 */
+    .sheet.collapsed .sheet-body{display:none}
+    .sheet-header{padding:18px 24px 14px;display:flex;flex-direction:column;gap:14px;cursor:grab;-webkit-user-select:none;user-select:none;touch-action:none;max-width:860px;margin:0 auto;width:100%}
     .sheet-header:focus-visible{outline:2px solid #4c5468;outline-offset:4px}
     .sheet-header:active{cursor:grabbing}
     .sheet-handle{width:48px;height:4px;border-radius:999px;background:#d0d4dc;margin:0 auto}
     .sheet-header-bar{display:flex;align-items:center;justify-content:center;gap:12px}
     .sheet-title{font-size:15px;font-weight:600;color:#1a1e27}
-    .sheet-body{padding:0 20px 20px;overflow-y:auto}
-    .row{display:flex;gap:8px;align-items:center;margin:10px 0}
-    input,select,button{padding:12px;border-radius:12px;border:1px solid #d8dce6;font-size:15px;background:#fff;color:#1a1e27}
+    .sheet-body{padding:8px 24px 24px;overflow-y:auto;max-width:860px;margin:0 auto}
+
+    /* 입력/버튼 공통 */
+    .row{display:flex;gap:12px;align-items:center;justify-content:center;margin:12px 0;flex-wrap:wrap}
+    .row > input{flex:1;min-width:200px;max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .row > button{white-space:nowrap}
+    input,select,button{padding:13px;border-radius:12px;border:1px solid #d8dce6;font-size:15px;background:#fff;color:#1a1e27}
     button{cursor:pointer}
     .btn-primary{background:#111;color:#fff;border-color:#111}
     .btn-location{background:#4c5468;color:#fff;border:0;padding:10px 12px;font-size:14px}
     .btn-location:hover{background:#2f3443}
     .tab{padding:8px 12px;border:1px solid #d8dce6;border-radius:999px;background:#fff;color:#1a1e27;font-weight:600}
     .tab.on{background:#111;color:#fff;border-color:#111}
-    .card{border:1px solid #e6e9f1;border-radius:16px;padding:14px;margin:10px 0;background:#fff;color:#1a1e27;box-shadow:0 4px 12px rgba(17,23,34,.06)}
+
+    /* 카드/상태/뱃지 */
+    .card{border:1px solid #e6e9f1;border-radius:16px;padding:16px;margin:12px 0;background:#fff;color:#1a1e27;box-shadow:0 4px 12px rgba(17,23,34,.06)}
     .card-hint{background:#f6f8ff;border-color:#d6dcff;color:#1a1e27}
     .card-center{background:#f6f8ff;border-color:#d6dcff}
     .badge{display:inline-flex;align-items:center;gap:4px;background:#f0f1f6;border-radius:999px;padding:4px 10px;margin-right:6px;font-size:12px;font-weight:600;color:#50586b}
-    .status{font-size:12px;color:#555;margin:6px 0 2px;min-height:18px}
+    .status{font-size:12px;color:#555;margin:8px 0 4px;min-height:20px}
     .btn-inline{margin-top:10px;padding:10px 14px;border-radius:12px;border:1px solid #c5c9d8;background:#fff;color:#1a1e27;font-size:13px;font-weight:600}
     .btn-inline:hover{background:#f0f2f8}
-    .top3-popup{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(17,23,34,.35);transition:opacity .25s ease;opacity:1}
+
+    /* 추천 Top3 팝업(바텀시트 형태) */
+    .top3-popup{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;background:rgba(17,23,34,.35);transition:opacity .25s ease;opacity:1}
     .top3-popup.hidden{opacity:0;pointer-events:none}
-    .popup-content{background:#fff;border-radius:24px;box-shadow:0 24px 60px rgba(17,23,34,.18);padding:26px 24px 22px;max-width:420px;width:100%;position:relative;color:#111;display:flex;flex-direction:column;gap:18px}
+    .popup-content{background:#fff;border-radius:20px;box-shadow:0 8px 32px rgba(17,23,34,.15);padding:26px 24px 22px;max-width:500px;width:100%;position:relative;color:#111;display:flex;flex-direction:column;gap:18px;max-height:70vh;overflow-y:auto}
     .popup-title{font-size:18px;font-weight:700;margin:0;color:#111}
     .popup-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;border:0;background:#f0f2f8;color:#111;font-size:20px;line-height:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
     .popup-close:hover{background:#e0e3ed}
@@ -49,25 +72,81 @@
     .popup-action{align-self:flex-start;padding:10px 16px;border-radius:12px;border:0;background:#111;color:#fff;font-size:14px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
     .popup-action:hover{background:#2f3443}
     .popup-icon{font-size:20px}
+    .popup-tabs{display:flex;gap:8px;padding:16px 24px 0;border-bottom:1px solid #e6e9f1}
+    .popup-tab{padding:8px 12px;border:1px solid #d8dce6;border-radius:999px;background:#fff;color:#1a1e27;font-weight:600;cursor:pointer}
+    .popup-tab.on{background:#111;color:#fff;border-color:#111}
+    .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(var(--peek) + 24px);z-index:15;background:#111;color:#fff;padding:14px 20px;border-radius:999px;font-weight:600;font-size:15px;border:0;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.25);transition:transform .2s ease,background .2s ease}
+    .fab:hover{background:#2f3443;transform:translateX(-50%) translateY(-2px)}
+    .fab:active{transform:translateX(-50%) translateY(0)}
+    .legend{position:fixed;right:16px;bottom:120px;z-index:14;background:#fff;border:1px solid #e1e5f2;border-radius:16px;padding:14px 16px;box-shadow:0 8px 24px rgba(0,0,0,.1);font-size:13px;line-height:1.8}
+    .legend-item{display:flex;align-items:center;color:#333}
+
+    /* 모바일에서 여백/글자 크기 약간 축소 */
     @media (max-width:768px){
       .popup-content{padding:22px 20px 18px;border-radius:22px}
       .popup-card{padding:14px}
       .popup-name{font-size:16px}
+      .sheet-body{max-width:100%}
+      .row{justify-content:stretch}
+      .sheet-header{max-width:100%}
+    }
+    
+    /* 초소형 화면에서 입력이 화면을 넘치지 않도록 강제 줄바꿈 */
+    @media (max-width:420px){
+      .row{gap:8px}
+      .row > input{min-width:0;width:100%}
+      .row > button{width:100%}
+    }
+    
+    /* 큰 화면에서 입력 영역 최대 폭 제한 및 중앙 정렬 */
+    @media (min-width:1024px){
+      .sheet-body{max-width:980px}
     }
   </style>
-  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=d1edc654e39b717ae9109665b63453f6&libraries=services&autoload=false"></script>
+
+  <!--
+    Kakao Maps JS SDK는 동적으로 로드됩니다 (app.js에서)
+  -->
 </head>
 <body>
+  <!-- 전 화면 지도 캔버스 -->
   <div id="map"></div>
+  
+  <!-- 지도 레전드 -->
+  <div id="legend" class="legend" style="display:none">
+    <div class="legend-item"><span style="background:#39678F;width:16px;height:16px;border-radius:50%;display:inline-block;margin-right:6px"></span>중간지점</div>
+    <div class="legend-item"><span style="background:#4caf50;width:16px;height:16px;border-radius:50%;display:inline-block;margin-right:6px"></span>참여자</div>
+    <div class="legend-item"><span style="background:#111;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#fff;margin-right:6px">1</span>Top 1</div>
+    <div class="legend-item"><span style="background:#111;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#fff;margin-right:6px">2</span>Top 2</div>
+    <div class="legend-item"><span style="background:#111;width:24px;height:24px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:bold;color:#fff;margin-right:6px">3</span>Top 3</div>
+  </div>
 
+  <!-- 추천 Top3 모달(재사용되는 컨테이너) -->
   <div id="top3-popup" class="top3-popup hidden" role="dialog" aria-modal="true" aria-hidden="true">
     <div class="popup-content">
       <button type="button" class="popup-close" aria-label="닫기">×</button>
       <h2 class="popup-title">추천 Top3</h2>
+      <div class="popup-tabs" id="popup-tabs" style="display:none"></div>
+      <div class="popup-tabs" id="route-mode-tabs" style="display:none"></div>
       <div class="popup-list"></div>
+      
+      <!-- 코스 장바구니 패널 -->
+      <div id="course-cart-panel" style="display:none;border-top:1px solid #e6e9f1;padding-top:16px;margin-top:16px">
+        <div class="cart-title" style="font-weight:700;font-size:16px;margin-bottom:12px">내 코스 🧭 (0)</div>
+        <div class="cart-pills" style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:12px"></div>
+        <button type="button" class="recommend-course-btn popup-action" style="width:100%;margin-top:8px" disabled>추천 코스 보기</button>
+      </div>
+      
+      <!-- 코스 결과 섹션 -->
+      <div id="course-results-section" style="display:none;border-top:1px solid #e6e9f1;padding-top:16px;margin-top:16px">
+        <div class="course-results-header" style="font-weight:700;font-size:16px;margin-bottom:12px">💡 추천 코스 3개가 만들어졌어요</div>
+        <div class="course-results-list" style="display:flex;flex-direction:column;gap:12px"></div>
+      </div>
     </div>
   </div>
+  
 
+  <!-- 하단 시트: 검색 입력/결과/상태/토스트 -->
   <div class="sheet collapsed" id="sheet" aria-expanded="false">
     <div class="sheet-header" id="sheetHeader" role="button" tabindex="0" aria-controls="sheetBody" aria-expanded="false">
       <div class="sheet-handle" aria-hidden="true"></div>
@@ -76,30 +155,94 @@
       </div>
     </div>
     <div class="sheet-body" id="sheetBody">
-      <!-- 참여자 입력 -->
+      <!-- 참여자 입력(참여자1은 '내 위치'로 자동 채움 가능) -->
       <div class="row"><input id="p1" placeholder="본인 위치" /><button class="btn-location" type="button">내 위치</button></div>
       <div class="row"><input id="p2" placeholder="참여자2 장소 (예: 홍대입구역)" /></div>
-      <!-- 검색 파라미터 -->
+
+      <!-- 액션: 중간지점 산출 → 인기 지역 Top3 탐색 -->
       <div class="row">
         <button id="btnCenter" class="btn-primary" type="button">중간지점→지역 Top3</button>
       </div>
-      <!-- 탭 -->
-      <div class="row" id="tabs" style="gap:6px">
-        <button class="tab on" data-cat="all" type="button">전체</button>
-        <button class="tab" data-cat="food" type="button">맛집</button>
-        <button class="tab" data-cat="pub" type="button">술집</button>
-        <button class="tab" data-cat="cafe" type="button">카페</button>
-        <button class="tab" data-cat="play" type="button">놀거리</button>
-      </div>
+
+      <!-- 상태 메시지 / 결과 카드 / 토스트 -->
       <div class="status" id="status">준비됨</div>
       <div id="results"></div>
+      <div id="toast" style="position:fixed;left:50%;transform:translateX(-50%);bottom:90px;z-index:30;background:#111;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none"></div>
     </div>
   </div>
 
-  <!-- 모듈 스크립트 -->
+  <!--
+    모듈 엔트리:
+    - 서버에서 카카오 API 키를 가져와 동적으로 SDK 로드
+    - session-ui/app.js 의 initApp()을 Kakao SDK 준비 후 호출
+  -->
   <script type="module">
     import { initApp } from './session-ui/app.js';
-    kakao.maps.load(() => initApp());
+    
+    // 서버에서 카카오 API 키 가져오기
+    async function loadKakaoSDK() {
+      try {
+        const response = await fetch('http://localhost:3000/api/config');
+        if (!response.ok) {
+          throw new Error(`서버 응답 오류: ${response.status}`);
+        }
+        const config = await response.json();
+        const kakaoAppKey = config.kakaoAppKey;
+        
+        if (!kakaoAppKey) {
+          console.error('❌ 카카오 API 키가 설정되지 않았습니다. .env 파일에 KAKAO_APP_KEY를 추가하세요.');
+          return;
+        }
+        
+        console.log('✅ 카카오 API 키 로드 완료');
+        
+        // 동적으로 카카오 SDK 스크립트 로드
+        const script = document.createElement('script');
+        script.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${kakaoAppKey}&libraries=services,drawing&autoload=false`;
+        script.async = true;
+        
+        script.onload = () => {
+          console.log('✅ Kakao Maps SDK 스크립트 로드 완료');
+          
+          // kakao 객체가 전역에 설정될 때까지 대기 (최대 2초)
+          let retryCount = 0;
+          const maxRetries = 20;
+          const checkKakao = setInterval(() => {
+            if (typeof window.kakao !== 'undefined' && window.kakao.maps && typeof window.kakao.maps.load === 'function') {
+              clearInterval(checkKakao);
+              console.log('✅ Kakao 객체 확인 완료');
+              window.kakao.maps.load(() => {
+                console.log('✅ Kakao Maps 초기화 완료');
+                initApp();
+              });
+            } else {
+              retryCount++;
+              if (retryCount >= maxRetries) {
+                clearInterval(checkKakao);
+                console.error('❌ Kakao Maps SDK 초기화 실패: kakao 객체를 찾을 수 없습니다');
+              }
+            }
+          }, 100);
+        };
+        
+        script.onerror = (error) => {
+          console.error('❌ Kakao Maps SDK 로드 실패:', error);
+        };
+        
+        document.head.appendChild(script);
+      } catch (error) {
+        console.error('❌ 설정 로드 실패:', error);
+        console.error('💡 서버가 실행 중인지 확인하세요: http://localhost:3000');
+        console.error('💡 CORS 오류가 발생할 수 있습니다. 브라우저 콘솔을 확인하세요.');
+      }
+    }
+    
+    // 페이지 로드 시 카카오 SDK 로드
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', loadKakaoSDK);
+    } else {
+      loadKakaoSDK();
+    }
   </script>
 </body>
 </html>

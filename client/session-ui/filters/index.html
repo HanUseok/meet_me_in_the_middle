@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <!--
+    문서 메타/타이틀/스타일
+    - color-scheme: 라이트/다크 대응
+    - --peek: 하단 시트가 접혔을 때 노출되는 높이(px)
+  -->
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>meet_me_in_the_middle · MVP</title>
+  <style>
+    /* ===== 전역/레이아웃 ===== */
+    :root{color-scheme:light dark;--peek:76px}
+    html,body{height:100%;margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,Apple SD Gothic Neo,Noto Sans KR,sans-serif;background:#f5f7fb}
+    #map{position:fixed;inset:0;width:100%;height:100%;z-index:0} /* 카카오 지도 전체 배경 */
+
+    /* ===== 하단 시트(검색/결과 패널) =====
+       - transform: translateY(--sheet-offset)로 열림/접힘 제어
+       - .open / .collapsed / .dragging 상태 클래스 사용 */
+    .sheet{--sheet-offset:0px;position:fixed;left:0;right:0;bottom:0;z-index:10;background:#fff;border-top:1px solid #eee;border-radius:20px 20px 0 0;box-shadow:0 -16px 40px rgba(0,0,0,.12);display:flex;flex-direction:column;max-height:78vh;transition:transform .35s ease;will-change:transform;transform:translateY(var(--sheet-offset));overscroll-behavior:contain;min-height:200px}
+    .sheet.collapsed{--sheet-offset:calc(100% - var(--peek))}
+    .sheet.open{--sheet-offset:0px}
+    .sheet.dragging{transition:none}
+    .sheet-header{padding:16px 20px 12px;display:flex;flex-direction:column;gap:12px;cursor:grab;-webkit-user-select:none;user-select:none;touch-action:none}
+    .sheet-header:focus-visible{outline:2px solid #4c5468;outline-offset:4px}
+    .sheet-header:active{cursor:grabbing}
+    .sheet-handle{width:48px;height:4px;border-radius:999px;background:#d0d4dc;margin:0 auto}
+    .sheet-header-bar{display:flex;align-items:center;justify-content:center;gap:12px}
+    .sheet-title{font-size:15px;font-weight:600;color:#1a1e27}
+    .sheet-body{padding:0 20px 20px;overflow-y:auto}
+
+    /* ===== 폼/버튼/탭 ===== */
+    .row{display:flex;gap:8px;align-items:center;margin:10px 0}
+    input,select,button{padding:12px;border-radius:12px;border:1px solid #d8dce6;font-size:15px;background:#fff;color:#1a1e27}
+    button{cursor:pointer}
+    .btn-primary{background:#111;color:#fff;border-color:#111}
+    .btn-location{background:#4c5468;color:#fff;border:0;padding:10px 12px;font-size:14px}
+    .btn-location:hover{background:#2f3443}
+    .tab{padding:8px 12px;border:1px solid #d8dce6;border-radius:999px;background:#fff;color:#1a1e27;font-weight:600}
+    .tab.on{background:#111;color:#fff;border-color:#111}
+
+    /* ===== 카드/뱃지/상태 ===== */
+    .card{border:1px solid #e6e9f1;border-radius:16px;padding:14px;margin:10px 0;background:#fff;color:#1a1e27;box-shadow:0 4px 12px rgba(17,23,34,.06)}
+    .card-hint{background:#f6f8ff;border-color:#d6dcff;color:#1a1e27}
+    .card-center{background:#f6f8ff;border-color:#d6dcff}
+    .badge{display:inline-flex;align-items:center;gap:4px;background:#f0f1f6;border-radius:999px;padding:4px 10px;margin-right:6px;font-size:12px;font-weight:600;color:#50586b}
+    .status{font-size:12px;color:#555;margin:6px 0 2px;min-height:18px}
+    .btn-inline{margin-top:10px;padding:10px 14px;border-radius:12px;border:1px solid #c5c9d8;background:#fff;color:#1a1e27;font-size:13px;font-weight:600}
+    .btn-inline:hover{background:#f0f2f8}
+
+    /* ===== Top3 팝업(백드롭 + 모달) ===== */
+    .top3-popup{position:fixed;inset:0;z-index:20;display:flex;align-items:center;justify-content:center;padding:20px;background:rgba(17,23,34,.35);transition:opacity .25s ease;opacity:1}
+    .top3-popup.hidden{opacity:0;pointer-events:none} /* hidden 시 클릭 방지 */
+    .popup-content{background:#fff;border-radius:24px;box-shadow:0 24px 60px rgba(17,23,34,.18);padding:26px 24px 22px;max-width:420px;width:100%;position:relative;color:#111;display:flex;flex-direction:column;gap:18px}
+    .popup-title{font-size:18px;font-weight:700;margin:0;color:#111}
+    .popup-close{position:absolute;top:14px;right:14px;width:32px;height:32px;border-radius:50%;border:0;background:#f0f2f8;color:#111;font-size:20px;line-height:0;display:flex;align-items:center;justify-content:center;cursor:pointer}
+    .popup-close:hover{background:#e0e3ed}
+    .popup-list{display:flex;flex-direction:column;gap:12px;max-height:60vh;overflow-y:auto;padding-right:4px}
+    .popup-card{border:1px solid #e1e5f2;border-radius:18px;padding:16px;background:#fff;display:flex;flex-direction:column;gap:10px;box-shadow:0 10px 32px rgba(17,23,34,.12)}
+    .popup-card-header{display:flex;align-items:center;gap:10px}
+    .popup-rank{font-size:15px;font-weight:700;color:#69728a}
+    .popup-name{font-size:17px;font-weight:700;color:#111}
+    .popup-meta{font-size:13px;color:#586076;display:flex;flex-wrap:wrap;gap:6px}
+    .popup-action{align-self:flex-start;padding:10px 16px;border-radius:12px;border:0;background:#111;color:#fff;font-size:14px;font-weight:600;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+    .popup-action:hover{background:#2f3443}
+    .popup-icon{font-size:20px}
+    .popup-tabs{display:flex;gap:8px;padding:16px 24px 0;border-bottom:1px solid #e6e9f1}
+    .popup-tab{padding:8px 12px;border:1px solid #d8dce6;border-radius:999px;background:#fff;color:#1a1e27;font-weight:600;cursor:pointer}
+    .popup-tab.on{background:#111;color:#fff;border-color:#111}
+
+    /* ===== 반응형(모바일) 조정 ===== */
+    @media (max-width:768px){
+      .popup-content{padding:22px 20px 18px;border-radius:22px}
+      .popup-card{padding:14px}
+      .popup-name{font-size:16px}
+    }
+  </style>
+
+  <!--
+    Kakao Maps JS SDK 로딩
+    - libraries=services,drawing : 장소검색/지오코딩/경로 등 서비스 기능 사용
+    - autoload=false : 로더를 지연 호출(kakao.maps.load)하여 초기화 시점 제어
+    ⚠️ 주의: appkey는 노출되므로 실제 배포에서는 도메인 제한/키 관리 필요
+  -->
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=d1edc654e39b717ae9109665b63453f6&libraries=services,drawing&autoload=false"></script>
+</head>
+<body>
+  <!-- 지도 컨테이너(전체 화면) -->
+  <div id="map"></div>
+
+  <!--
+    Top3 팝업(모달)
+    - role="dialog", aria-modal="true": 접근성 속성
+    - .hidden 클래스 토글로 표시/비표시 제어
+    - 내부에 탭 영역(#popup-tabs)과 리스트(.popup-list) 포함
+  -->
+  <div id="top3-popup" class="top3-popup hidden" role="dialog" aria-modal="true" aria-hidden="true">
+    <div class="popup-content">
+      <button type="button" class="popup-close" aria-label="닫기">×</button>
+      <h2 class="popup-title">추천 Top3</h2>
+      <div class="popup-tabs" id="popup-tabs" style="display:none"></div>
+      <div class="popup-list"></div>
+    </div>
+  </div>
+
+  <!--
+    하단 시트(검색·결과)
+    - sheetHeader: 드래그/탭으로 열림/닫힘
+    - sheetBody: 입력폼/상태/결과/토스트 영역
+  -->
+  <div class="sheet collapsed" id="sheet" aria-expanded="false">
+    <div class="sheet-header" id="sheetHeader" role="button" tabindex="0" aria-controls="sheetBody" aria-expanded="false">
+      <div class="sheet-handle" aria-hidden="true"></div>
+      <div class="sheet-header-bar">
+        <span class="sheet-title">검색 · 결과</span>
+      </div>
+    </div>
+    <div class="sheet-body" id="sheetBody">
+      <!-- 참여자 입력(참여자1: 내 위치 버튼으로 자동 기입 가능) -->
+      <div class="row"><input id="p1" placeholder="본인 위치" /><button class="btn-location" type="button">내 위치</button></div>
+      <div class="row"><input id="p2" placeholder="참여자2 장소 (예: 홍대입구역)" /></div>
+
+      <!-- 액션 버튼: 중간지점 계산 → 인기 지역 Top3 탐색 -->
+      <div class="row">
+        <button id="btnCenter" class="btn-primary" type="button">중간지점→지역 Top3</button>
+      </div>
+
+      <!-- 상태/결과/토스트 -->
+      <div class="status" id="status">준비됨</div>
+      <div id="results"></div>
+      <div id="toast" style="position:fixed;left:50%;transform:translateX(-50%);bottom:90px;z-index:30;background:#111;color:#fff;padding:10px 14px;border-radius:10px;font-size:13px;display:none"></div>
+    </div>
+  </div>
+
+  <!--
+    모듈 스크립트
+    - session-ui/app.js의 initApp()을 호출
+    - Kakao SDK는 autoload=false 이므로 kakao.maps.load 콜백에서 초기화
+    - SDK 로딩 지연/실패 대비해 100ms 후 1회 재시도
+  -->
+  <script type="module">
+    import { initApp } from './session-ui/app.js';
+    
+    // Kakao Maps SDK 준비 상태 확인 후 초기화
+    if (typeof kakao !== 'undefined' && kakao.maps && typeof kakao.maps.load === 'function') {
+      kakao.maps.load(() => {
+        console.log('Kakao Maps loaded successfully');
+        initApp(); // 앱 진입점
+      });
+    } else {
+      console.error('Kakao Maps SDK not loaded properly');
+      // 간단 재시도(네트워크/로드 지연 대비)
+      setTimeout(() => {
+        if (typeof kakao !== 'undefined' && kakao.maps && typeof kakao.maps.load === 'function') {
+          kakao.maps.load(() => {
+            console.log('Kakao Maps loaded successfully (retry)');
+            initApp();
+          });
+        } else {
+          console.error('Kakao Maps SDK still not available'); // 실패시 콘솔만 알림
+        }
+      }, 100);
+    }
+  </script>
+</body>
+</html>
